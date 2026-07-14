@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel | {{ site_name }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root{--ac:{{ theme_color }};--ac-dim:{{ theme_color }}88;--ac-lite:{{ theme_color }}11;}
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#080808;color:#e5e7eb;font-family:'JetBrains Mono',monospace;min-height:100vh}
+    header{background:#0a0a0a;border-bottom:1px solid #fbbf2444;padding:12px 20px;display:flex;align-items:center;justify-content:space-between}
+    .logo{display:flex;align-items:center;gap:8px}
+    .logo-icon{font-size:18px}
+    .logo-name{color:#fbbf24;font-weight:700;font-size:15px;text-shadow:0 0 8px #fbbf24}
+    .logo-sub{color:#4b5563;font-size:11px;margin-left:6px}
+    .header-right{display:flex;gap:8px}
+    .btn{padding:5px 12px;border-radius:6px;font-family:inherit;font-size:11px;cursor:pointer;border:1px solid;text-decoration:none;display:inline-block;transition:all .2s}
+    .btn-ghost{border-color:#2a2a2a;color:#6b7280;background:transparent}
+    .btn-ghost:hover{background:#1a1a1a;color:#fff}
+    .btn-red{border-color:#ef444488;color:#ef4444;background:transparent}
+    .btn-red:hover{background:#ef444411}
+    .btn-ac{border-color:var(--ac-dim);color:var(--ac);background:transparent}
+    .btn-ac:hover{background:var(--ac-lite)}
+    .btn-amber{border-color:#fbbf2488;color:#fbbf24;background:transparent}
+    .btn-amber:hover{background:#fbbf2411}
+    .stats-bar{background:#0d0d0d;border-bottom:1px solid #1a1a1a;padding:12px 20px;display:flex;gap:28px;flex-wrap:wrap}
+    .stat{text-align:center}
+    .stat-num{font-size:22px;font-weight:700}
+    .stat-label{font-size:9px;color:#4b5563;letter-spacing:2px;margin-top:2px}
+    main{padding:20px;max-width:900px;margin:0 auto}
+    .tabs{display:flex;gap:3px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:8px;padding:4px;width:fit-content;margin-bottom:20px;flex-wrap:wrap}
+    .tab{padding:7px 18px;border-radius:6px;border:none;font-family:inherit;font-size:12px;cursor:pointer;letter-spacing:1px;background:transparent;color:#6b7280;transition:all .2s}
+    .tab.active{background:#1a1a1a;color:#fbbf24}
+    .tab-panel{display:none}
+    .tab-panel.active{display:block;animation:fadeIn .2s ease}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+    .card{background:#0a0a0a;border:3px solid #1a1a1a;border-radius:10px;overflow:hidden;margin-bottom:14px}
+    .card-header{padding:10px 16px;border-bottom:1px solid #1a1a1a;font-size:11px;color:#4b5563;letter-spacing:2px}
+    .user-row{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #0d0d0d;transition:background .15s}
+    .user-row:last-child{border-bottom:none}
+    .user-row:hover{background:#0d0d0d}
+    .user-name{font-size:14px;font-weight:700;color:var(--ac);flex:1}
+    .user-meta{font-size:11px;color:#4b5563;margin-top:3px}
+    .server-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #0d0d0d;font-size:12px}
+    .server-row:last-child{border-bottom:none}
+    .badge{padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;border:3px solid}
+    .badge.running{border-color:var(--ac);color:var(--ac)}
+    .badge.stopped{border-color:#ef4444;color:#ef4444}
+    .maint-toggle{width:60px;height:28px;border-radius:14px;background:#1a1a1a;border:2px solid #333;cursor:pointer;position:relative;transition:all .3s}
+    .maint-toggle.on{background:#ef4444;border-color:#ef4444;box-shadow:0 0 12px #ef444488}
+    .toggle-dot{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#555;transition:all .3s}
+    .maint-toggle.on .toggle-dot{left:33px;background:#fff}
+    .form-input{width:100%;padding:9px 12px;background:#111;border:3px solid #2a2a2a;border-radius:8px;color:#e5e7eb;font-family:inherit;font-size:13px;outline:none}
+    .form-input:focus{border-color:#fbbf24}
+    .section-title{font-size:13px;color:#fbbf24;letter-spacing:2px;margin-bottom:12px;font-weight:700}
+
+    /* ── Colour theme picker ── */
+    .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-bottom:16px}
+    .theme-swatch{border:3px solid #2a2a2a;border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:all .2s;background:#0d0d0d;font-size:11px;line-height:1.5}
+    .theme-swatch:hover{border-color:#fbbf24;transform:translateY(-2px)}
+    .theme-swatch.active{border-color:#fbbf24;box-shadow:0 0 12px #fbbf2444}
+    .swatch-dot{width:32px;height:32px;border-radius:50%;margin:0 auto 6px;border:3px solid rgba(255,255,255,.1)}
+    .swatch-name{color:#9ca3af;font-size:10px;letter-spacing:.5px}
+    .custom-color-row{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+    input[type=color]{width:50px;height:36px;border:3px solid #2a2a2a;border-radius:8px;background:#111;cursor:pointer;padding:2px}
+    input[type=color]:focus{border-color:#fbbf24}
+
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(100px);background:#0d0d0d;border:3px solid #fbbf24;border-radius:10px;padding:10px 20px;font-size:13px;color:#fbbf24;z-index:999;transition:transform .3s}
+    .toast.show{transform:translateX(-50%) translateY(0)}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <span class="logo-icon">⚔️</span>
+      <span class="logo-name">{{ site_name }}</span>
+      <span class="logo-sub">ADMIN PANEL</span>
+    </div>
+    <div class="header-right">
+      <a href="/dashboard" class="btn btn-ghost">USER VIEW</a>
+      <a href="/admin/logout" class="btn btn-red">LOGOUT</a>
+    </div>
+  </header>
+
+  <div class="stats-bar">
+    <div class="stat">
+      <div class="stat-num" style="color:#fbbf24">{{ total_users }}</div>
+      <div class="stat-label">USERS</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num" style="color:var(--ac)">{{ total_projects }}</div>
+      <div class="stat-label">PROJECTS</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num" style="color:#00ff41">{{ running }}</div>
+      <div class="stat-label">RUNNING</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num" style="color:#9ca3af">{{ total_files }}</div>
+      <div class="stat-label">FILES</div>
+    </div>
+  </div>
+
+  <main>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('users',this)">👤 USERS</button>
+      <button class="tab" onclick="switchTab('servers',this)">🖥️ PROJECTS</button>
+      <button class="tab" onclick="switchTab('appearance',this)">🎨 APPEARANCE</button>
+      <button class="tab" onclick="switchTab('system',this)">⚙️ SYSTEM</button>
+    </div>
+
+    <!-- USERS TAB -->
+    <div id="tab-users" class="tab-panel active">
+      <div class="card">
+        <div class="card-header">ALL USERS ({{ total_users }})</div>
+        {% for u in users %}
+        <div class="user-row">
+          <div style="flex:1">
+            <div class="user-name">@{{ u.username }}</div>
+            <div class="user-meta">{{ u.projects }} projects · {{ u.running }} running · {{ u.files }} files · Joined {{ u.joined[:10] }}</div>
+          </div>
+          <a href="/admin/user/{{ u.username }}/files" class="btn btn-ac">FILES</a>
+          <a href="/admin/user/{{ u.username }}/download" class="btn btn-ghost">⬇ ZIP</a>
+          <form action="/admin/user/{{ u.username }}/delete" method="POST" style="display:inline" onsubmit="return confirm('Delete user {{ u.username }}?')">
+            <button class="btn btn-red">🗑 DEL</button>
+          </form>
+        </div>
+        {% else %}
+        <div style="padding:40px;text-align:center;color:#374151">No users yet</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- SERVERS TAB -->
+    <div id="tab-servers" class="tab-panel">
+      <div class="card">
+        <div class="card-header">ALL PROJECTS ({{ servers|length }})</div>
+        {% for name, cfg in servers.items() %}
+        <div class="server-row">
+          <span class="badge {{ cfg.status }}">{{ cfg.status.upper() }}</span>
+          <span style="flex:1;color:#e5e7eb">{{ name }}</span>
+          <span style="color:#4b5563;font-size:11px">@{{ cfg.owner }}</span>
+          <a href="/server/{{ name }}" class="btn btn-ac">OPEN</a>
+          <a href="/admin/project/{{ name }}/download" class="btn btn-ghost">⬇ ZIP</a>
+          <form action="/admin/server/{{ name }}/delete" method="POST" style="display:inline" onsubmit="return confirm('Delete project {{ name }}?')">
+            <button class="btn btn-red">🗑</button>
+          </form>
+        </div>
+        {% else %}
+        <div style="padding:40px;text-align:center;color:#374151">No projects yet</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- APPEARANCE TAB -->
+    <div id="tab-appearance" class="tab-panel">
+      <!-- Theme colour picker -->
+      <div class="section-title">🎨 THEME COLOR</div>
+      <div class="theme-grid">
+        {% for name, color in theme_presets.items() %}
+        <div class="theme-swatch {% if color == settings.theme_color %}active{% endif %}"
+             onclick="applyTheme('{{ color }}', this)">
+          <div class="swatch-dot" style="background:{{ color }};box-shadow:0 0 10px {{ color }}44"></div>
+          <div class="swatch-name">{{ name }}</div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div style="margin-bottom:20px">
+        <div class="section-title" style="font-size:11px;margin-bottom:8px">CUSTOM COLOR</div>
+        <div class="custom-color-row">
+          <input type="color" id="customColor" value="{{ settings.theme_color }}">
+          <input class="form-input" id="customColorHex" value="{{ settings.theme_color }}" placeholder="#a855f7" style="max-width:160px">
+          <button class="btn btn-amber" onclick="applyCustomColor()">APPLY</button>
+        </div>
+        <div style="font-size:10px;color:#4b5563;margin-top:4px">Enter any hex color like #ff6b00</div>
+      </div>
+
+      <!-- Site name -->
+      <div class="section-title">🏷️ SITE NAME</div>
+      <div class="card" style="padding:16px;margin-bottom:16px">
+        <input class="form-input" id="siteName" value="{{ site_name }}" placeholder="JIHAD 〆24" style="margin-bottom:10px">
+        <button class="btn btn-amber" onclick="saveSiteSettings()" style="width:100%">💾 SAVE SITE NAME</button>
+      </div>
+    </div>
+
+    <!-- SYSTEM TAB -->
+    <div id="tab-system" class="tab-panel">
+      <!-- Maintenance -->
+      <div class="section-title">🔧 MAINTENANCE MODE</div>
+      <div class="card" style="padding:16px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <div class="maint-toggle {% if settings.maintenance %}on{% endif %}" id="maintToggle" onclick="toggleMaint()">
+            <div class="toggle-dot"></div>
+          </div>
+          <span style="font-size:13px;color:#9ca3af">Maintenance Mode</span>
+        </div>
+        <input class="form-input" id="maintMsg" value="{{ settings.maintenance_msg }}" placeholder="System under maintenance." style="margin-bottom:10px">
+        <button class="btn btn-amber" onclick="saveMaint()" style="width:100%">💾 SAVE MAINTENANCE</button>
+      </div>
+
+      <!-- Global Auto-Reset -->
+      <div class="section-title">🔄 GLOBAL AUTO-RESET</div>
+      <div class="card" style="padding:16px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
+          <div class="maint-toggle {% if settings.global_auto_reset != false %}on{% endif %}" id="garToggle" onclick="toggleGAR()">
+            <div class="toggle-dot"></div>
+          </div>
+          <div>
+            <div style="font-size:13px;color:#9ca3af;font-weight:700">Auto-Reset (Global)</div>
+            <div style="font-size:10px;color:#4b5563;margin-top:2px" id="garTxt">{% if settings.global_auto_reset != false %}ENABLED — stopped servers restart automatically{% else %}DISABLED — servers stay stopped{% endif %}</div>
+          </div>
+        </div>
+        <button class="btn btn-amber" onclick="saveGAR()" style="width:100%">💾 SAVE AUTO-RESET</button>
+      </div>
+
+      <!-- Admin password -->
+      <div class="section-title">🔐 CHANGE PASSWORDS</div>
+      <div class="card" style="padding:16px;margin-bottom:16px">
+        <div style="font-size:11px;color:#4b5563;margin-bottom:6px;letter-spacing:1px">ADMIN PASSWORD</div>
+        <input class="form-input" id="adminPw" type="password" placeholder="New admin password" style="margin-bottom:10px">
+        <div style="font-size:11px;color:#4b5563;margin-bottom:6px;letter-spacing:1px">USER PASSWORD</div>
+        <input class="form-input" id="normalPw" type="password" placeholder="New user password" style="margin-bottom:10px">
+        <button class="btn btn-amber" onclick="savePasswords()" style="width:100%">💾 SAVE PASSWORDS</button>
+      </div>
+
+      <!-- Install all packages -->
+      <div class="section-title">📦 INSTALL ALL PACKAGES</div>
+      <div class="card" style="padding:16px">
+        <div style="font-size:12px;color:#6b7280;margin-bottom:12px;line-height:1.6">
+          Installs all common Python and Node.js packages globally. This may take several minutes.
+        </div>
+        <div id="installAllProg" style="display:none;margin-bottom:10px">
+          <div style="font-size:11px;color:#fbbf24;margin-bottom:6px">⚙️ Installing packages...</div>
+          <div style="background:#111;border:2px solid #2a2a2a;border-radius:8px;height:12px;overflow:hidden">
+            <div style="height:100%;background:#fbbf24;border-radius:6px;width:50%;animation:progressPulse 1.2s ease-in-out infinite"></div>
+          </div>
+          @keyframes progressPulse{0%,100%{opacity:.7}50%{opacity:1}}
+        </div>
+        <button class="btn btn-amber" onclick="installAll()" id="installAllBtn" style="width:100%">⚡ INSTALL ALL PACKAGES</button>
+        <div id="installAllResult" style="margin-top:10px;font-size:11px;color:#6b7280;display:none"></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    let maintOn = {{ 'true' if settings.maintenance else 'false' }};
+    let garOn = {{ 'true' if settings.global_auto_reset != false else 'false' }};
+
+    function switchTab(name, el) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      el.classList.add('active');
+    }
+
+    function toast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
+    // ── Theme ──────────────────────────────────────────────────────
+    async function applyTheme(color, el) {
+      const r = await fetch('/admin/theme', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({color})
+      });
+      const d = await r.json();
+      if (d.success) {
+        document.documentElement.style.setProperty('--ac', color);
+        document.documentElement.style.setProperty('--ac-dim', color + '88');
+        document.documentElement.style.setProperty('--ac-lite', color + '11');
+        document.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+        el.classList.add('active');
+        document.getElementById('customColorHex').value = color;
+        document.getElementById('customColor').value = color;
+        toast('✅ Theme applied: ' + color);
+      }
+    }
+
+    function applyCustomColor() {
+      const hex = document.getElementById('customColorHex').value.trim();
+      const picker = document.getElementById('customColor').value;
+      const color = hex.startsWith('#') ? hex : picker;
+      applyTheme(color, null);
+    }
+
+    document.getElementById('customColor').addEventListener('input', function() {
+      document.getElementById('customColorHex').value = this.value;
+    });
+
+    // ── Site name ──────────────────────────────────────────────────
+    async function saveSiteSettings() {
+      const r = await fetch('/admin/site-settings', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({site_name: document.getElementById('siteName').value})
+      });
+      const d = await r.json();
+      toast(d.success ? '✅ Site name saved!' : '❌ Failed');
+    }
+
+    // ── Maintenance ────────────────────────────────────────────────
+    function toggleMaint() {
+      maintOn = !maintOn;
+      const tog = document.getElementById('maintToggle');
+      tog.classList.toggle('on', maintOn);
+    }
+
+    async function saveMaint() {
+      const r = await fetch('/admin/maintenance', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({enabled: maintOn, message: document.getElementById('maintMsg').value})
+      });
+      const d = await r.json();
+      toast(d.success ? '✅ Maintenance saved!' : '❌ Failed');
+    }
+
+    // ── Passwords ──────────────────────────────────────────────────
+    async function savePasswords() {
+      const ap = document.getElementById('adminPw').value.trim();
+      const np = document.getElementById('normalPw').value.trim();
+      if (!ap && !np) { toast('❌ Enter at least one password'); return; }
+      const payload = {};
+      if (ap) payload.admin_password = ap;
+      if (np) payload.normal_password = np;
+      const r = await fetch('/admin/site-settings', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      if (d.success) {
+        document.getElementById('adminPw').value = '';
+        document.getElementById('normalPw').value = '';
+        toast('✅ Passwords updated!');
+      } else {
+        toast('❌ Failed');
+      }
+    }
+
+    // ── Install all packages ───────────────────────────────────────
+    async function installAll() {
+      const btn = document.getElementById('installAllBtn');
+      const prog = document.getElementById('installAllProg');
+      const res = document.getElementById('installAllResult');
+      btn.disabled = true;
+      prog.style.display = 'block';
+      res.style.display = 'none';
+      try {
+        const r = await fetch('/admin/packages/install-all', {method: 'POST'});
+        const d = await r.json();
+        prog.style.display = 'none';
+        res.style.display = 'block';
+        res.innerHTML = `✅ Python: ${d.python_count} | Node: ${d.node_count} | Static: ${d.static_count} | Failed: ${d.failed.length}`;
+        toast('✅ Packages installed!');
+      } catch(e) {
+        prog.style.display = 'none';
+        res.style.display = 'block';
+        res.textContent = '❌ Install error: ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
