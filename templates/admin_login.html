@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Login | {{ site_name }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#080808;font-family:'JetBrains Mono',monospace;min-height:100vh;display:flex;align-items:center;justify-content:center}
+    .card{background:#0a0a0a;border:3px solid #fbbf24;border-radius:12px;padding:40px 36px;max-width:360px;width:100%;box-shadow:0 0 40px #fbbf2422;margin:16px}
+    .icon{font-size:48px;text-align:center;margin-bottom:12px;filter:drop-shadow(0 0 10px #fbbf24)}
+    .title{text-align:center;font-size:20px;font-weight:700;color:#fbbf24;letter-spacing:3px;text-shadow:0 0 10px #fbbf24;margin-bottom:4px}
+    .sub{text-align:center;font-size:11px;color:#4b5563;letter-spacing:2px;margin-bottom:24px}
+    .error{background:#2a0808;border:2px solid #ef4444;border-radius:8px;padding:10px 14px;font-size:12px;color:#f87171;margin-bottom:14px}
+    input{width:100%;padding:11px 14px;background:#111;border:2px solid #fbbf2444;border-radius:8px;color:#fbbf24;font-family:'JetBrains Mono',monospace;font-size:14px;outline:none;margin-bottom:16px;transition:border-color .2s}
+    input:focus{border-color:#fbbf24}
+    input::placeholder{color:#4b5563}
+    .btn{width:100%;padding:11px;background:transparent;border:3px solid #fbbf24;border-radius:8px;color:#fbbf24;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:2px;transition:all .2s}
+    .btn:hover{background:#fbbf2411;box-shadow:0 0 16px #fbbf2444}
+    .back{display:block;text-align:center;margin-top:14px;font-size:11px;color:#4b5563;text-decoration:none;transition:color .2s}
+    .back:hover{color:#9ca3af}
+    .brand{text-align:center;font-size:10px;color:#374151;letter-spacing:2px;margin-top:20px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🔐</div>
+    <div class="title">ADMIN ACCESS</div>
+    <div class="sub">{{ site_name }} CONTROL PANEL</div>
+    {% if error %}<div class="error">▲ {{ error }}</div>{% endif %}
+    <form method="POST">
+      <input type="password" name="password" placeholder="Admin password" required autofocus>
+      <button type="submit" class="btn">&gt;_ ACCESS PANEL</button>
+    </form>
+    <a href="/login" class="back">← BACK TO LOGIN</a>
+    <div class="brand">JIHAD 〆24 · ADMIN ONLY</div>
+  </div>
+</body>
+</html>

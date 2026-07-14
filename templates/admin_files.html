@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Files | {{ site_name }}</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root{--ac:{{ theme_color }};--ac-dim:{{ theme_color }}88;--ac-lite:{{ theme_color }}11;}
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{background:#080808;color:#e5e7eb;font-family:'JetBrains Mono',monospace;min-height:100vh}
+    header{background:#0a0a0a;border-bottom:1px solid #fbbf2444;padding:12px 20px;display:flex;align-items:center;justify-content:space-between}
+    .logo-name{color:#fbbf24;font-weight:700;font-size:15px;text-shadow:0 0 8px #fbbf24}
+    .back{background:transparent;border:2px solid #2a2a2a;color:#6b7280;padding:4px 10px;border-radius:6px;text-decoration:none;font-size:11px;font-family:inherit;cursor:pointer;transition:all .2s}
+    .back:hover{background:#1a1a1a;color:#fff}
+    main{padding:20px;max-width:800px;margin:0 auto}
+    .page-title{font-size:18px;font-weight:700;color:#fbbf24;margin-bottom:4px}
+    .page-sub{font-size:11px;color:#4b5563;margin-bottom:20px;letter-spacing:1px}
+    .project-block{background:#0a0a0a;border:3px solid #1a1a1a;border-radius:10px;overflow:hidden;margin-bottom:16px}
+    .project-header{padding:12px 16px;background:#0d0d0d;border-bottom:2px solid #1a1a1a;display:flex;align-items:center;justify-content:space-between}
+    .project-name{font-size:14px;font-weight:700;color:var(--ac)}
+    .type-filter{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+    .type-btn{padding:4px 10px;border-radius:5px;border:2px solid #2a2a2a;background:transparent;color:#6b7280;font-family:inherit;font-size:11px;cursor:pointer;transition:all .2s}
+    .type-btn.active{border-color:var(--ac);color:var(--ac)}
+    .file-row{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid #0d0d0d;font-size:12px;transition:background .15s}
+    .file-row:last-child{border-bottom:none}
+    .file-row:hover{background:#0d0d0d}
+    .ext-badge{font-size:10px;font-weight:700;min-width:30px;text-align:right}
+    .file-name{flex:1;color:#9ca3af}
+    .file-name.main{color:var(--ac)}
+    .file-path{font-size:10px;color:#374151;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .file-size{color:#374151;font-size:11px;white-space:nowrap}
+    .dl-btn{color:var(--ac);text-decoration:none;font-size:13px;padding:2px 6px;border-radius:4px;transition:background .15s}
+    .dl-btn:hover{background:var(--ac-lite)}
+    .file-summary{padding:8px 16px;font-size:11px;color:#4b5563;display:flex;gap:16px;border-top:1px solid #1a1a1a}
+    .empty{padding:24px;text-align:center;color:#374151;font-size:12px}
+    .btn{padding:4px 10px;border-radius:5px;border:1px solid;font-family:inherit;font-size:11px;cursor:pointer;text-decoration:none;display:inline-block;transition:all .2s;background:transparent}
+    .btn-amber{border-color:#fbbf2488;color:#fbbf24}
+    .btn-amber:hover{background:#fbbf2411}
+    #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(100px);background:#0d0d0d;border:3px solid #fbbf24;border-radius:8px;padding:8px 16px;font-size:12px;color:#fbbf24;z-index:999;transition:transform .3s}
+    #toast.show{transform:translateX(-50%) translateY(0)}
+  </style>
+</head>
+<body>
+  <header>
+    <span class="logo-name">⚔️ {{ site_name }} · FILES</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <a href="/admin/user/{{ username }}/download" class="btn btn-amber" id="dlAll">⬇ DOWNLOAD ALL</a>
+      <a href="/admin" class="back">← ADMIN</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="page-title">@{{ username }}</div>
+    <div class="page-sub">ALL UPLOADED FILES</div>
+
+    <div class="type-filter">
+      <button class="type-btn active" onclick="filterType(this,'all')">ALL</button>
+      <button class="type-btn" onclick="filterType(this,'.py')">.py</button>
+      <button class="type-btn" onclick="filterType(this,'.js')">.js</button>
+      <button class="type-btn" onclick="filterType(this,'.ts')">.ts</button>
+      <button class="type-btn" onclick="filterType(this,'.json')">.json</button>
+      <button class="type-btn" onclick="filterType(this,'.html')">.html</button>
+      <button class="type-btn" onclick="filterType(this,'.txt')">.txt</button>
+    </div>
+
+    {% for name, data in file_data.items() %}
+    {% set real_files = data.files|selectattr('type','eq','file')|list %}
+    <div class="project-block">
+      <div class="project-header">
+        <span class="project-name">📁 {{ name }}</span>
+        <div style="display:flex;gap:6px">
+          <a href="/admin/project/{{ name }}/download" class="btn btn-amber" id="dl-{{ name }}">⬇ ZIP</a>
+        </div>
+      </div>
+      {% if real_files %}
+      <div id="files-{{ name }}">
+        {% for f in real_files %}
+        {% set ext = f.name.split('.')[-1] if '.' in f.name else '' %}
+        <div class="file-row" data-ext=".{{ ext }}">
+          <span class="ext-badge" style="color:{% if ext=='py' %}#3b82f6{% elif ext=='js' %}#fbbf24{% elif ext=='ts' %}#38bdf8{% elif ext=='json' %}#a78bfa{% elif ext in ['sh','bash'] %}#22c55e{% elif ext=='html' %}#f97316{% elif ext=='css' %}#38bdf8{% else %}#6b7280{% endif %}">.{{ ext }}</span>
+          <span class="file-name {% if f.path == data.config.get('main_file') %}main{% endif %}">
+            {{ f.name }}{% if f.path == data.config.get('main_file') %} <span style="font-size:10px;border:2px solid var(--ac-dim);border-radius:3px;padding:1px 5px;color:var(--ac)">main</span>{% endif %}
+          </span>
+          <span class="file-path" title="{{ f.path }}">{{ f.path }}</span>
+          <span class="file-size">{{ '%.1f'|format(f.size/1024) }}kb</span>
+          <a href="/admin/file/{{ name }}/download?path={{ f.path|urlencode }}" class="dl-btn" download="{{ f.name }}" title="Download {{ f.name }}">⬇</a>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="file-summary">
+        <span id="count-{{ name }}">{{ real_files|length }} files</span>
+        <span>{{ '%.1f'|format(real_files|sum(attribute='size')/1024) }}kb total</span>
+      </div>
+      {% else %}
+      <div class="empty">No files uploaded for this project</div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:60px;color:#374151">No projects for @{{ username }}</div>
+    {% endfor %}
+  </main>
+
+  <div id="toast"></div>
+
+  <script>
+    let currentType='all';
+    function filterType(el,type){
+      currentType=type;
+      document.querySelectorAll('.type-btn').forEach(b=>b.classList.remove('active'));
+      el.classList.add('active');
+      let extMatch = type;
+      if(type !== 'all' && !type.startsWith('.')) extMatch = '.' + type;
+      document.querySelectorAll('[data-ext]').forEach(row=>{
+        row.style.display=(type==='all'||row.dataset.ext===extMatch)?'flex':'none';
+      });
+      document.getElementById('dlAll').href='/admin/user/{{ username }}/download?type='+encodeURIComponent(type);
+      document.querySelectorAll('[id^="dl-"]').forEach(a=>{
+        const name=a.id.replace('dl-','');
+        a.href='/admin/project/'+name+'/download?type='+encodeURIComponent(type);
+      });
+    }
+    function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
+  </script>
+</body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>{{ site_name }} — Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root{--ac:{{ theme_color }};--ac-dim:{{ theme_color }}88;--ac-lite:{{ theme_color }}15;}
+    *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    body{background:#06010f;color:#e5e7eb;font-family:'JetBrains Mono',monospace;min-height:100vh;padding-bottom:24px}
+
+    /* ── HEADER ── */
+    header{background:#09000f;border-bottom:2px solid var(--ac-dim);padding:12px 14px;position:sticky;top:0;z-index:50}
+    .hdr-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+    .logo{display:flex;align-items:center;gap:8px}
+    .logo-icon{font-size:22px;filter:drop-shadow(0 0 6px var(--ac))}
+    .logo-name{color:var(--ac);font-weight:700;font-size:16px;letter-spacing:1px;text-shadow:0 0 8px var(--ac)}
+    .hdr-actions{display:flex;gap:8px;align-items:center}
+    .username{color:var(--ac);font-size:11px;opacity:.7}
+    .hdr-btn{padding:6px 12px;border-radius:7px;font-family:inherit;font-size:11px;cursor:pointer;border:2px solid;transition:all .2s;text-decoration:none;display:inline-block;background:transparent;font-weight:700}
+    .hdr-btn-ac{border-color:var(--ac-dim);color:var(--ac)}
+    .hdr-btn-ac:active{background:var(--ac-lite)}
+    .hdr-btn-red{border-color:#ef444466;color:#ef4444}
+    .hdr-btn-red:active{background:#ef444415}
+    .sys-stats{display:flex;gap:10px;font-size:10px;color:#4b5563;letter-spacing:.5px}
+
+    /* ── MAIN ── */
+    main{padding:14px}
+
+    /* ── STAT CARDS ── */
+    .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+    .stat{background:#0d000d;border:2px solid #1a0a1a;border-radius:12px;padding:14px;text-align:center}
+    .stat-num{font-size:36px;font-weight:700}
+    .stat-num.ac{color:var(--ac);text-shadow:0 0 16px var(--ac)}
+    .stat-num.wh{color:#e5e7eb}
+    .stat-lbl{font-size:10px;color:#4b5563;letter-spacing:2px;margin-top:3px}
+
+    /* ── SERVER CARDS ── */
+    .srv-card{background:#0a0015;border:2px solid #1a0a2a;border-left:5px solid #1a0a2a;border-radius:12px;padding:14px;margin-bottom:10px;transition:border-color .2s;cursor:default}
+    .srv-card.running{border-left-color:var(--ac)}
+    .srv-card.stopped{border-left-color:#ef4444}
+    .srv-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;gap:8px}
+    .srv-name{font-weight:700;font-size:15px;color:#fff;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .sbadge{padding:3px 9px;border-radius:5px;font-size:10px;font-weight:700;border:2px solid;flex-shrink:0}
+    .sbadge.running{border-color:var(--ac);color:var(--ac)}
+    .sbadge.stopped{border-color:#ef4444;color:#ef4444}
+    .srv-sub{font-size:10px;color:#4b5563;margin-bottom:12px}
+    .srv-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+    .sact{height:40px;background:transparent;border-radius:8px;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;border:2px solid}
+    .sact.ac{border-color:var(--ac-dim);color:var(--ac)}.sact.ac:active{background:var(--ac-lite)}
+    .sact.red{border-color:#ef444466;color:#ef4444}.sact.red:active{background:#ef444415}
+    .sact.amber{border-color:#fbbf2466;color:#fbbf24}.sact.amber:active{background:#fbbf2415}
+
+    /* ── EMPTY ── */
+    .empty{text-align:center;padding:60px 20px;color:#374151}
+    .empty-icon{font-size:50px;margin-bottom:12px;opacity:.25}
+    .empty-txt{font-size:12px;letter-spacing:1px}
+
+    /* ── FAB ── */
+    .fab{position:fixed;bottom:24px;right:20px;width:58px;height:58px;border-radius:50%;background:var(--ac);border:none;color:#000;font-size:28px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px var(--ac-dim);z-index:50;display:flex;align-items:center;justify-content:center;transition:transform .15s}
+    .fab:active{transform:scale(.93)}
+
+    /* ── MODAL ── */
+    .modal-bg{display:none;position:fixed;inset:0;background:#000000cc;z-index:200;align-items:flex-end;justify-content:center}
+    .modal-bg.show{display:flex}
+    .modal{background:#0d000d;border:2px solid var(--ac-dim);border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;max-width:480px}
+    .modal-title{font-size:16px;font-weight:700;color:var(--ac);letter-spacing:1px;margin-bottom:20px;text-align:center}
+    .form-label{font-size:10px;color:#4b5563;letter-spacing:1px;margin-bottom:5px;display:block}
+    .form-input{width:100%;padding:13px 12px;background:#111;border:2px solid #2a2a2a;border-radius:8px;color:#e5e7eb;font-family:inherit;font-size:14px;outline:none;margin-bottom:14px;-webkit-appearance:none}
+    .form-input:focus{border-color:var(--ac)}
+    .modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px}
+    .mbtn{padding:14px;border-radius:10px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;border:2px solid;background:transparent;letter-spacing:.5px}
+    .mbtn-ac{border-color:var(--ac);color:var(--ac)}.mbtn-ac:active{background:var(--ac-lite)}
+    .mbtn-cancel{border-color:#2a2a2a;color:#4b5563}
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-top">
+    <div class="logo">
+      <span class="logo-icon">⚡</span>
+      <span class="logo-name">{{ site_name }}</span>
+    </div>
+    <div class="hdr-actions">
+      <span class="username">{{ session.get('username','') }}</span>
+      {% if session.get('admin') %}
+      <a href="/admin" class="hdr-btn hdr-btn-ac">ADMIN</a>
+      {% endif %}
+      <a href="/logout" class="hdr-btn hdr-btn-red">EXIT</a>
+    </div>
+  </div>
+  <div class="sys-stats">
+    <span id="statCpu">CPU: --</span>
+    <span id="statRam">RAM: --</span>
+    <span id="statDisk">DISK: --</span>
+  </div>
+</header>
+
+<main>
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-num ac">{{ servers|length }}</div>
+      <div class="stat-lbl">PROJECTS</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num wh">{{ servers.values()|selectattr('status','eq','running')|list|length }}</div>
+      <div class="stat-lbl">RUNNING</div>
+    </div>
+  </div>
+
+  <!-- Server cards -->
+  {% if servers %}
+    {% for name, cfg in servers.items() %}
+    <div class="srv-card {{ cfg.status }}">
+      <div class="srv-top">
+        <span class="srv-name">{{ name }}</span>
+        <span class="sbadge {{ cfg.status }}">{{ cfg.status.upper() }}</span>
+      </div>
+      <div class="srv-sub">{{ cfg.runtime.upper() }} · PORT {{ cfg.port }}</div>
+      <div class="srv-actions">
+        <a href="/server/{{ name }}" class="sact ac" title="Open">📂</a>
+        <button class="sact ac" onclick="startSrv('{{ name }}')" title="Start">▶</button>
+        <button class="sact red" onclick="stopSrv('{{ name }}')" title="Stop">■</button>
+        <button class="sact red" onclick="deleteSrv('{{ name }}')" title="Delete">🗑</button>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">
+      <div class="empty-icon">📂</div>
+      <div class="empty-txt">NO PROJECTS YET<br>TAP + TO CREATE ONE</div>
+    </div>
+  {% endif %}
+</main>
+
+<!-- FAB -->
+<button class="fab" onclick="document.getElementById('modal').classList.add('show')">+</button>
+
+<!-- Create Modal -->
+<div id="modal" class="modal-bg" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal">
+    <div class="modal-title">⚡ NEW PROJECT</div>
+    <form action="/server/create" method="POST">
+      <label class="form-label">PROJECT NAME</label>
+      <input class="form-input" name="name" placeholder="my-bot" required autofocus autocomplete="off">
+      <label class="form-label">RUNTIME</label>
+      <select class="form-input" name="runtime">
+        <option value="python">🐍 Python</option>
+        <option value="node">🟩 Node.js</option>
+        <option value="static">🌐 Static</option>
+      </select>
+      <div class="modal-actions">
+        <button type="submit" class="mbtn mbtn-ac">✅ CREATE</button>
+        <button type="button" class="mbtn mbtn-cancel" onclick="document.getElementById('modal').classList.remove('show')">CANCEL</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+async function fetchStats() {
+  try {
+    const d = await (await fetch('/api/stats')).json();
+    document.getElementById('statCpu').textContent = 'CPU: ' + d.cpu.toFixed(1) + '%';
+    document.getElementById('statRam').textContent = 'RAM: ' + d.ram.toFixed(1) + '%';
+    document.getElementById('statDisk').textContent = 'DISK: ' + d.disk.toFixed(1) + '%';
+  } catch(e) {}
+}
+fetchStats(); setInterval(fetchStats, 5000);
+
+async function startSrv(name) {
+  const d = await (await fetch('/server/' + name + '/start', {method:'POST'})).json();
+  if (d.success || d.error === 'Already running') location.reload();
+  else alert('❌ ' + (d.error||'Failed'));
+}
+async function stopSrv(name) {
+  const d = await (await fetch('/server/' + name + '/stop', {method:'POST'})).json();
+  if (d.success) location.reload();
+  else alert('❌ ' + (d.error||'Failed'));
+}
+async function deleteSrv(name) {
+  if (!confirm('Delete "' + name + '"? This cannot be undone!')) return;
+  await fetch('/server/' + name + '/delete', {method:'POST'});
+  location.reload();
+}
+</script>
+</body>
+</html>
