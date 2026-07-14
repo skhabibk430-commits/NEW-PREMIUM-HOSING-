@@ -1,0 +1,106 @@
+{
+  "servers": {
+    "RIFAT": {
+      "name": "RIFAT",
+      "owner": "JAHID",
+      "runtime": "python",
+      "status": "stopped",
+      "main_file": "app.py",
+      "main_command": "",
+      "port": 8080,
+      "packages": [],
+      "pid": null,
+      "created": "2026-07-14T07:20:30.992597",
+      "auto_reset": {
+        "enabled": false,
+        "years": 0,
+        "days": 0,
+        "hours": 0,
+        "minutes": 0,
+        "seconds": 0
+      }
+    },
+    "Bot": {
+      "name": "Bot",
+      "owner": "JIHAd",
+      "runtime": "python",
+      "status": "stopped",
+      "main_file": "",
+      "main_command": "",
+      "port": 8080,
+      "packages": [],
+      "pid": null,
+      "created": "2026-07-14T07:26:05.690479",
+      "auto_reset": {
+        "enabled": false,
+        "years": 0,
+        "days": 0,
+        "hours": 0,
+        "minutes": 0,
+        "seconds": 0
+      }
+    },
+    "Kire": {
+      "name": "Kire",
+      "owner": "JIHAd",
+      "runtime": "python",
+      "status": "stopped",
+      "main_file": "bot.py",
+      "main_command": "",
+      "port": 8080,
+      "packages": [],
+      "pid": null,
+      "created": "2026-07-14T07:26:41.786523",
+      "auto_reset": {
+        "enabled": false,
+        "years": 0,
+        "days": 0,
+        "hours": 0,
+        "minutes": 0,
+        "seconds": 0
+      }
+    },
+    "Hi": {
+      "name": "Hi",
+      "owner": "Hi",
+      "runtime": "python",
+      "status": "stopped",
+      "main_file": "",
+      "main_command": "",
+      "port": 8080,
+      "packages": [],
+      "pid": null,
+      "created": "2026-07-14T17:26:40.179573",
+      "auto_reset": {
+        "enabled": false,
+        "years": 0,
+        "days": 0,
+        "hours": 0,
+        "minutes": 0,
+        "seconds": 0
+      }
+    }
+  },
+  "users": {
+    "JIHAd": {
+      "joined": "2026-07-14T07:14:09.537548",
+      "password_hash": "f1534392279bddbf9d43dde8701cb5be14b82f76ec6607bf8d6ad557f60f304e"
+    },
+    "JAHID": {
+      "joined": "2026-07-14T07:20:22.148893",
+      "password_hash": "f1534392279bddbf9d43dde8701cb5be14b82f76ec6607bf8d6ad557f60f304e"
+    },
+    "Hi": {
+      "joined": "2026-07-14T17:25:29.624732",
+      "password_hash": "f1534392279bddbf9d43dde8701cb5be14b82f76ec6607bf8d6ad557f60f304e"
+    }
+  },
+  "settings": {
+    "maintenance": false,
+    "maintenance_msg": "System under maintenance.",
+    "theme_color": "#00ff41",
+    "admin_password": "JIHAD004X",
+    "normal_password": "00",
+    "site_name": "JIHAD \u303e24"
+  }
+}
